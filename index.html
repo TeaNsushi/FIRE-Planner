@@ -151,6 +151,7 @@
                         <svg class="w-5 h-5 text-success-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>
                         CPF Balances
                     </h2>
+                    <p class="text-[10px] text-slate-500 mb-3 italic">Calculated with base rates: OA at 2.5%, SA/MS/RA at 4.0%.</p>
                     <div class="grid grid-cols-3 gap-3">
                         <div>
                             <label class="block text-xs font-medium text-slate-400 mb-1.5">OA ($)</label>
@@ -283,7 +284,7 @@
 
         <footer class="text-center mt-12 mb-6 text-xs text-slate-600 no-print">
             <p>Retirement Fast-Check &bull; All calculations performed locally in your browser.</p>
-            <p class="mt-1">This is a simplified model. It assumes CPF balances grow alongside your portfolio and are fully accessible upon target retirement age.</p>
+            <p class="mt-1">This is a simplified model. It assumes CPF remains largely intact until target retirement age, treating the balances as continuous wealth compounders.</p>
         </footer>
     </div>
 
@@ -321,7 +322,7 @@
                     labels: labels,
                     datasets: [
                         {
-                            label: 'Total Portfolio Value (Investments + Cash)',
+                            label: 'Total Portfolio Value (Inv + Cash + CPF)',
                             data: portfolioValues,
                             borderColor: '#0ea5e9', // accent-500
                             backgroundColor: 'rgba(14, 165, 233, 0.15)',
@@ -435,7 +436,7 @@
             const expectedReturn = (parseFloat(document.getElementById('expectedReturn').value) || 7) / 100;
             const inflationRate = (parseFloat(document.getElementById('inflation').value) || 3) / 100;
             
-            // Cash grows at Inflation - 0.5% (safeguarded to not go below 0 if inflation is extremely low)
+            // Cash grows at Inflation - 0.5% (safeguarded to not go below 0)
             const cashGrowthRate = Math.max(0, inflationRate - 0.005);
 
             // Property Downgrade
@@ -450,9 +451,12 @@
             // Base FIRE number is calculated using POST-RETIREMENT expenses
             const fireNumberToday = postRetireExpenses / 0.04;
 
-            // Split portfolio into Invested and Cash buckets for accurate math
-            let investedPortfolio = currentAssets + cpfOA + cpfSA + cpfMS;
+            // Split portfolio into isolated buckets for accurate math
+            let investedPortfolio = currentAssets;
             let cashPortfolio = cashInBank;
+            let currOA = cpfOA;
+            let currSA = cpfSA;
+            let currMS = cpfMS;
 
             let projectionData = [];
             let fireYear = null;
@@ -467,19 +471,29 @@
                 const annualInvestContrib = (age < targetAge) ? (monthlyInvestment * 12) : 0;
                 const annualCashContrib = (age < targetAge) ? (monthlyCashSavings * 12) : 0;
                 
-                // Calculate separate growth
+                // Calculate separate growth for each bucket
                 const investedGrowth = investedPortfolio * expectedReturn;
                 const cashGrowth = cashPortfolio * cashGrowthRate;
                 
+                // CPF Base Growth (OA: 2.5%, SA/MS: 4.0%)
+                const oaGrowth = currOA * 0.025;
+                const saGrowth = currSA * 0.04;
+                const msGrowth = currMS * 0.04;
+                
                 investedPortfolio += investedGrowth + annualInvestContrib;
                 cashPortfolio += cashGrowth + annualCashContrib;
+                currOA += oaGrowth;
+                currSA += saGrowth;
+                currMS += msGrowth;
 
                 // Property Downgrade Injection Event (occurs at target age, assume it gets invested)
                 if (age === targetAge && downgradeProceeds > 0) {
                     investedPortfolio += downgradeProceeds;
                 }
 
-                let totalNewPortfolio = investedPortfolio + cashPortfolio;
+                // Total it all up for the projection
+                let totalCPF = currOA + currSA + currMS;
+                let totalNewPortfolio = investedPortfolio + cashPortfolio + totalCPF;
 
                 // Inflate the POST-RETIREMENT expenses to figure out the future FIRE target
                 const inflatedPostRetireExpenses = postRetireExpenses * Math.pow(1 + inflationRate, year);
@@ -499,11 +513,11 @@
 
                 projectionData.push({
                     year, age, 
-                    portfolio: totalNewPortfolio - investedGrowth - cashGrowth - annualInvestContrib - annualCashContrib, 
+                    portfolio: totalNewPortfolio - investedGrowth - cashGrowth - oaGrowth - saGrowth - msGrowth - annualInvestContrib - annualCashContrib, 
                     newPortfolio: totalNewPortfolio,
                     annualInvestContrib,
                     annualCashContrib,
-                    growth: investedGrowth + cashGrowth,
+                    growth: investedGrowth + cashGrowth + oaGrowth + saGrowth + msGrowth,
                     inflatedExpenses: inflatedPostRetireExpenses, 
                     fireTarget, status
                 });
